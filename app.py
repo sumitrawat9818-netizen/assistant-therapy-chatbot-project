@@ -1,91 +1,85 @@
 import streamlit as st
 import pickle
-import numpy as np
 import os
 import sys
+from google import genai
+from clean_text import clean_text 
 
-# Add the current directory to path to find clean_text.py
-# (This is often needed for Streamlit deployments)
-sys.path.append(os.path.dirname(__file__)) 
-from clean_text import clean_text # Assuming you defined the full clean_text function in clean_text.py
+# --- 1. UI Setup ---
+st.set_page_config(page_title="Clarity: AI Therapy", layout="centered")
+st.title("🤖 Clarity: Mental Health Assistant")
 
-# --- 1. LLM Setup (The Therapy Brain) ---
-# NOTE: The API key must be set as a Streamlit Secret, not directly in the code!
+# --- 2. LLM Setup ---
 try:
-    from google import genai
+    # The client automatically looks for "GEMINI_API_KEY" in Streamlit Secrets
     client = genai.Client()
-except Exception as e:
-    st.error(f"Failed to initialize Google GenAI client: {e}")
+except Exception:
     client = None
 
-def generate_therapy_response(user_input: str, predicted_intent: str) -> str:
-    """Uses the Gemini model to generate an empathetic, therapeutic response."""
+def generate_therapy_response(user_input, predicted_intent):
     if not client:
-        return "Therapy Assistant is offline due to API key error. Please check configuration."
+        return "Error: API Key missing. Please set GEMINI_API_KEY in Secrets."
     
     PROMPT = f"""
-    You are a compassionate, non-judgmental mental health assistant named 'Clarity'. 
-    Your goal is to offer empathetic support, validation, and a gentle redirection.
+    You are a compassionate AI assistant. The user feels: {predicted_intent}.
+    User said: "{user_input}"
     
-    The user's core psychological intent has been classified as: {predicted_intent}.
-    The user's statement was: "{user_input}".
-    
-    Based on the intent, provide a brief (2-3 sentence) response that:
-    1. Validates their feeling (e.g., "It sounds like you are feeling...")
-    2. Offers one simple, actionable coping strategy (e.g., a deep breath, small walk).
-    3. Gently suggests that speaking with a human professional (a therapist or counselor) is the best next step.
-    
-    Do not use emojis. Maintain a calm, caring, and professional tone.
+    Provide a 3-sentence supportive response:
+    1. Validate their feeling.
+    2. Offer a simple coping tip.
+    3. Suggest professional help if needed.
     """
-    
     try:
+        # FIXED: Using the specific stable version to avoid 404 errors
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=PROMPT,
-            config={"temperature": 0.5} 
+            model='gemini-1.5-flash-001',
+            contents=PROMPT
         )
         return response.text
     except Exception as e:
-        return f"I'm sorry, I'm currently unable to generate a response. Your feelings matter. Please consider reaching out to a support line. (API Error: {e})"
+        return f"Connection Error: {e}"
 
-# --- 2. Load the ML Assets ---
-try:
-    with open('intent_model.pkl', 'rb') as f:
-        model = pickle.load(f)
-    with open('tfidf_vectorizer.pkl', 'rb') as f:
-        vectorizer = pickle.load(f)
-except FileNotFoundError:
-    st.error("ML model files (*.pkl) not found. Cannot run prediction. Ensure they are in your deployment folder.")
-    st.stop()
-
-
-# --- 3. Streamlit UI Setup ---
-st.set_page_config(page_title="Clarity: AI Assistant Therapy Demo", layout="centered")
-st.title("🤖 Clarity: AI Assistant Therapy Assistant")
-st.markdown("Your companion powered by **Intent Recognition** and **Generative AI**.")
-
+# --- 3. Load Models with Status ---
+with st.status("System Startup...", expanded=False) as status:
+    try:
+        st.write("Loading Intent Model...")
+        with open('intent_model.pkl', 'rb') as f:
+            model = pickle.load(f)
+        
+        st.write("Loading Vectorizer...")
+        with open('tfidf_vectorizer.pkl', 'rb') as f:
+            vectorizer = pickle.load(f)
+            
+        status.update(label="System Ready!", state="complete", expanded=False)
+    except FileNotFoundError:
+        st.error("Critical Error: .pkl files missing! Please upload them to GitHub.")
+        st.stop()
 
 # --- 4. Chat Logic ---
-user_input = st.text_area("How are you feeling today? (Tell me what's on your mind)", height=100)
+user_input = st.text_area("How are you feeling right now?", height=100)
 
-if st.button('Get Support') and user_input:
-    # A. Predict Intent
-    st.info("Analyzing your emotional intent...")
-    
-    # Clean the text using the imported function
-    user_cleaned = clean_text(user_input) 
-    
-    # Vectorize and Predict
-    user_vec = vectorizer.transform([user_cleaned])
-    predicted_intent = model.predict(user_vec)[0]
-    
-    st.sidebar.markdown(f"**ML Classified Intent:** `{predicted_intent.upper()}`")
-    
-    # B. Generate Therapeutic Response
-    with st.spinner("Clarity is synthesizing a compassionate response..."):
-        therapy_response = generate_therapy_response(user_input, predicted_intent)
-    
-    # C. Display Results
-    st.subheader("Clarity's Response:")
-    st.markdown(therapy_response)
-    st.success("Please continue to talk about your feelings.")
+if st.button("Get Support"):
+    if user_input:
+        # Step A: ML Prediction
+        status_text = st.empty()
+        status_text.info("Step 1/2: Analyzing sentiment pattern...")
+        
+        cleaned_text = clean_text(user_input)
+        input_vec = vectorizer.transform([cleaned_text])
+        predicted_intent = model.predict(input_vec)[0]
+        
+        # Show result immediately
+        st.sidebar.success(f"✅ Detected Intent: *{predicted_intent.upper()}*")
+        
+        # Step B: AI Generation
+        status_text.info("Step 2/2: Generating compassionate response...")
+        
+        ai_response = generate_therapy_response(user_input, predicted_intent)
+        
+        # Clear status and show result
+        status_text.empty()
+        st.subheader("Clarity's Response:")
+        st.write(ai_response)
+        
+    else:
+        st.warning("Please type something first.")
