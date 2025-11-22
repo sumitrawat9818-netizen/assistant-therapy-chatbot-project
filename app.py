@@ -30,30 +30,25 @@ def generate_therapy_response(user_input, predicted_intent):
     3. Suggest professional help if needed.
     """
     try:
-        # FIXED: Using the specific stable version to avoid 404 errors
+        # FIXED: Using 'gemini-pro' - the universal model that rarely fails
         response = client.models.generate_content(
-            model='gemini-1.5-flash-001',
+            model='gemini-pro',
             contents=PROMPT
         )
         return response.text
     except Exception as e:
         return f"Connection Error: {e}"
 
-# --- 3. Load Models with Status ---
-with st.status("System Startup...", expanded=False) as status:
-    try:
-        st.write("Loading Intent Model...")
-        with open('intent_model.pkl', 'rb') as f:
-            model = pickle.load(f)
-        
-        st.write("Loading Vectorizer...")
-        with open('tfidf_vectorizer.pkl', 'rb') as f:
-            vectorizer = pickle.load(f)
-            
-        status.update(label="System Ready!", state="complete", expanded=False)
-    except FileNotFoundError:
-        st.error("Critical Error: .pkl files missing! Please upload them to GitHub.")
-        st.stop()
+# --- 3. Load Models ---
+# We load these files directly from the repo root
+try:
+    with open('intent_model.pkl', 'rb') as f:
+        model = pickle.load(f)
+    with open('tfidf_vectorizer.pkl', 'rb') as f:
+        vectorizer = pickle.load(f)
+except FileNotFoundError:
+    st.error("Critical Error: .pkl files missing! Please upload them to GitHub.")
+    st.stop()
 
 # --- 4. Chat Logic ---
 user_input = st.text_area("How are you feeling right now?", height=100)
@@ -61,25 +56,17 @@ user_input = st.text_area("How are you feeling right now?", height=100)
 if st.button("Get Support"):
     if user_input:
         # Step A: ML Prediction
-        status_text = st.empty()
-        status_text.info("Step 1/2: Analyzing sentiment pattern...")
-        
+        st.info("Analyzing sentiment...")
         cleaned_text = clean_text(user_input)
         input_vec = vectorizer.transform([cleaned_text])
         predicted_intent = model.predict(input_vec)[0]
         
-        # Show result immediately
-        st.sidebar.success(f"✅ Detected Intent: *{predicted_intent.upper()}*")
+        st.sidebar.success(f"✅ Detected Intent: **{predicted_intent.upper()}**")
         
         # Step B: AI Generation
-        status_text.info("Step 2/2: Generating compassionate response...")
-        
-        ai_response = generate_therapy_response(user_input, predicted_intent)
-        
-        # Clear status and show result
-        status_text.empty()
-        st.subheader("Clarity's Response:")
-        st.write(ai_response)
-        
+        with st.spinner("Generating compassionate response..."):
+            ai_response = generate_therapy_response(user_input, predicted_intent)
+            st.subheader("Clarity's Response:")
+            st.write(ai_response)
     else:
         st.warning("Please type something first.")
