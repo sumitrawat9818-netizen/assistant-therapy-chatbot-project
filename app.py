@@ -29,7 +29,7 @@ def generate_therapy_response(user_input, predicted_intent):
     try:
         # Using the specific stable version
         response = client.models.generate_content(
-            model='gemini-1.5-flash-001', 
+            model='gemini-1.5-flash', 
             contents=PROMPT
         )
         return response.text
@@ -62,3 +62,4 @@ if st.button("Get Support"):
             ai_response = generate_therapy_response(user_input, predicted_intent)
             st.subheader("Clarity's Response:")
             st.write(ai_response)
+
